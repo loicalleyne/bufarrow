@@ -1,10 +1,10 @@
-package arrow3
+package bufarrow
 
 import (
 	"testing"
 
-	"github.com/apache/arrow/go/v17/arrow/memory"
-	"github.com/gernest/arrow3/gen/go/samples"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/loicalleyne/bufarrow/gen/go/samples"
 )
 
 func TestNew(t *testing.T) {

@@ -1,14 +1,14 @@
-package arrow3
+package bufarrow
 
 import (
 	"context"
 	"errors"
 	"io"
 
-	"github.com/apache/arrow/go/v17/arrow"
-	"github.com/apache/arrow/go/v17/arrow/memory"
-	"github.com/apache/arrow/go/v17/parquet"
-	"github.com/apache/arrow/go/v17/parquet/schema"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/parquet"
+	"github.com/apache/arrow-go/v18/parquet/schema"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -59,7 +59,9 @@ func (s *Schema[T]) Schema() *arrow.Schema {
 	return s.msg.schema
 }
 
-func (s *Schema[T]) Read(ctx context.Context, r parquet.ReaderAtSeeker, columns []int) (arrow.Record, error) {
+// ReadParquet specified columns from parquet source r and returns an Arrow record. The returned record must
+// be released by the caller.
+func (s *Schema[T]) ReadParquet(ctx context.Context, r parquet.ReaderAtSeeker, columns []int) (arrow.Record, error) {
 	return s.msg.Read(ctx, r, columns)
 }
 
@@ -67,6 +69,7 @@ func (s *Schema[T]) WriteParquet(w io.Writer) error {
 	return s.msg.WriteParquet(w)
 }
 
+// WriteParquetRecords write one or many Arrow records to parquet
 func (s *Schema[T]) WriteParquetRecords(w io.Writer, records ...arrow.Record) error {
 	return s.msg.WriteParquetRecords(w, records...)
 }
@@ -76,6 +79,7 @@ func (s *Schema[T]) Proto(r arrow.Record, rows []int) []T {
 	return unmarshal[T](s.msg.root, r, rows)
 }
 
+// Release releases the reference on the message builder
 func (s *Schema[T]) Release() {
 	s.msg.builder.Release()
 }

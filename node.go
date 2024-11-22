@@ -1,4 +1,4 @@
-package arrow3
+package bufarrow
 
 import (
 	"errors"
@@ -6,16 +6,17 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/apache/arrow/go/v17/arrow"
-	"github.com/apache/arrow/go/v17/arrow/array"
-	"github.com/apache/arrow/go/v17/arrow/memory"
-	"github.com/apache/arrow/go/v17/parquet"
-	"github.com/apache/arrow/go/v17/parquet/compress"
-	"github.com/apache/arrow/go/v17/parquet/pqarrow"
-	"github.com/apache/arrow/go/v17/parquet/schema"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/parquet"
+	"github.com/apache/arrow-go/v18/parquet/compress"
+	"github.com/apache/arrow-go/v18/parquet/pqarrow"
+	"github.com/apache/arrow-go/v18/parquet/schema"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -35,7 +36,7 @@ type node struct {
 	write    valueFn
 	desc     protoreflect.Descriptor
 	children []*node
-	encode   encodeFn
+	encode   encodeFn // func(value protoreflect.Value, a arrow.Array, row int) protoreflect.Value
 	hash     map[string]*node
 }
 
@@ -78,11 +79,13 @@ func unmarshal[T proto.Message](n *node, r arrow.Record, rows []int) []T {
 							),
 						)
 					}
+					// fmt.Printf("%v %v %v \n", n.desc.FullName(), fs.FullName(), fs.Kind()) // debug
 					msg.Set(fs, lv)
 				}
 			case fs.IsMap():
 				panic("MAP not supported")
 			default:
+				// fmt.Printf("i: %d, %v %v %v %v \n", i, n.desc.FullName(), fs.FullName(), fs.Kind(), r.Column(i).DataType().String()) // debug
 				msg.Set(fs,
 					nx.encode(msg.NewField(fs), r.Column(i), row),
 				)
@@ -91,7 +94,6 @@ func unmarshal[T proto.Message](n *node, r arrow.Record, rows []int) []T {
 		o[idx] = msg.Interface().(T)
 	}
 	return o
-
 }
 
 func build(msg protoreflect.Message) *message {
@@ -165,6 +167,7 @@ func (m *message) append(msg protoreflect.Message) {
 func (m *message) NewRecord() arrow.Record {
 	return m.builder.NewRecord()
 }
+
 func createNode(parent *node, field protoreflect.FieldDescriptor, depth int) *node {
 	if depth >= maxDepth {
 		panic(ErrMxDepth)
@@ -288,6 +291,11 @@ func createNode(parent *node, field protoreflect.FieldDescriptor, depth int) *no
 		}
 		n.encode = func(value protoreflect.Value, a arrow.Array, row int) protoreflect.Value {
 			msg := value.Message()
+			if t, ok := a.(*array.Timestamp); ok {
+				tv := t.Value(row).ToTime(arrow.Millisecond)
+				ts := timestamppb.New(tv)
+				return protoreflect.ValueOfMessage(ts.ProtoReflect())
+			}
 			s := a.(*array.Struct)
 			typ := a.DataType().(*arrow.StructType)
 			for j := 0; j < s.NumField(); j++ {
@@ -377,6 +385,7 @@ func (n *node) WriteMessage(msg protoreflect.Message) {
 }
 
 func (n *node) baseType(field protoreflect.FieldDescriptor) (t arrow.DataType) {
+	// fmt.Printf("%v %v \n", n.desc.FullName(), field.Kind()) // debug
 	switch field.Kind() {
 	case protoreflect.EnumKind:
 		t = arrow.PrimitiveTypes.Int32
@@ -430,6 +439,14 @@ func (n *node) baseType(field protoreflect.FieldDescriptor) (t arrow.DataType) {
 		}
 		t = arrow.PrimitiveTypes.Uint32
 		n.encode = func(value protoreflect.Value, a arrow.Array, i int) protoreflect.Value {
+			switch at := a.(type) {
+			case *array.Uint32:
+				return protoreflect.ValueOfUint32(at.Value(i))
+			case *array.Int32:
+				return protoreflect.ValueOfUint32(uint32(at.Value(i)))
+			case *array.Int64:
+				return protoreflect.ValueOfUint32(uint32(at.Value(i)))
+			}
 			return protoreflect.ValueOfUint32(a.(*array.Uint32).Value(i))
 		}
 	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
@@ -454,6 +471,12 @@ func (n *node) baseType(field protoreflect.FieldDescriptor) (t arrow.DataType) {
 		}
 		t = arrow.PrimitiveTypes.Uint64
 		n.encode = func(value protoreflect.Value, a arrow.Array, i int) protoreflect.Value {
+			switch at := a.(type) {
+			case *array.Uint64:
+				return protoreflect.ValueOfUint64(at.Value(i))
+			case *array.Int64:
+				return protoreflect.ValueOfUint64(uint64(at.Value(i)))
+			}
 			return protoreflect.ValueOfUint64(a.(*array.Uint64).Value(i))
 		}
 	case protoreflect.DoubleKind:

@@ -1,4 +1,4 @@
-package arrow3
+package bufarrow
 
 import (
 	"bytes"
@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v17/arrow/memory"
-	"github.com/gernest/arrow3/gen/go/samples"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/loicalleyne/bufarrow/gen/go/samples"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"

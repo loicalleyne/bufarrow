@@ -1,4 +1,4 @@
-package arrow3
+package bufarrow
 
 import (
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
