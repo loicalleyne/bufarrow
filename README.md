@@ -28,4 +28,4 @@ Feedback and PRs welcome.
 
 ## License
 
-Bodkin is released under the Apache 2.0 license. See [LICENCE.txt](LICENCE.txt)
+Bufarrow is released under the Apache 2.0 license. See [LICENCE.txt](LICENCE.txt)
