@@ -3,3 +3,4 @@ tmp
 internal
 cmd
 *.yaml
+test

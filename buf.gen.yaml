@@ -2,7 +2,7 @@ version: v1
 managed:
   enabled: true
   go_package_prefix:
-    default: github.com/gernest/arrow3/gen/go
+    default: github.com/loicalleyne/bufarrow/gen/go
 
 plugins:
   - plugin: go
