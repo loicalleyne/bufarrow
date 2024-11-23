@@ -4,9 +4,13 @@ bufarrow 🦬
 
 Go library to build Apache Arrow records from Protocol Buffers
 
+## Features 
+- generate Arrow and Parquet schemas from Protobuf structs
+- build Arrow records from Protobuf
+
 ## 🚀 Install
 
-Using bufarow is easy. First, use `go get` to install the latest version
+Using bufarrow is easy. First, use `go get` to install the latest version
 of the library.
 
 ```sh
