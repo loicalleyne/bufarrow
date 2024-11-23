@@ -6,7 +6,7 @@ Go library to build Apache Arrow records from Protocol Buffers
 
 ## 🚀 Install
 
-Using buffarow is easy. First, use `go get` to install the latest version
+Using bufarow is easy. First, use `go get` to install the latest version
 of the library.
 
 ```sh
