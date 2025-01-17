@@ -54,9 +54,19 @@ func (s *Schema[T]) Parquet() *schema.Schema {
 	return s.msg.Parquet()
 }
 
-// Parquet returns schema as arrow schema
+// Schema returns schema as arrow schema
 func (s *Schema[T]) Schema() *arrow.Schema {
 	return s.msg.schema
+}
+
+// FieldNames returns top-level field names
+func (s *Schema[T]) FieldNames() []string {
+	var fieldNames []string
+	fieldNames = make([]string, 0, len(s.msg.schema.Fields()))
+	for _, f := s.msg.schema.Fields() {
+		fieldNames = append(fieldNames, f.Name)
+	}
+	return fieldNames
 }
 
 // ReadParquet specified columns from parquet source r and returns an Arrow record. The returned record must
@@ -65,6 +75,7 @@ func (s *Schema[T]) ReadParquet(ctx context.Context, r parquet.ReaderAtSeeker, c
 	return s.msg.Read(ctx, r, columns)
 }
 
+// WriteParquet writes Parquet to an io.Writer
 func (s *Schema[T]) WriteParquet(w io.Writer) error {
 	return s.msg.WriteParquet(w)
 }
