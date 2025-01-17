@@ -63,7 +63,7 @@ func (s *Schema[T]) Schema() *arrow.Schema {
 func (s *Schema[T]) FieldNames() []string {
 	var fieldNames []string
 	fieldNames = make([]string, 0, len(s.msg.schema.Fields()))
-	for _, f := s.msg.schema.Fields() {
+	for _, f := range s.msg.schema.Fields() {
 		fieldNames = append(fieldNames, f.Name)
 	}
 	return fieldNames
