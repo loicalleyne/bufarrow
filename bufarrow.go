@@ -13,7 +13,8 @@ import (
 )
 
 type Schema[T proto.Message] struct {
-	msg *message
+	msg     *message
+	stencil T
 }
 
 func New[T proto.Message](mem memory.Allocator) (schema *Schema[T], err error) {
@@ -33,8 +34,29 @@ func New[T proto.Message](mem memory.Allocator) (schema *Schema[T], err error) {
 	var a T
 	b := build(a.ProtoReflect())
 	b.build(mem)
-	schema = &Schema[T]{msg: b}
-	return
+	schema = &Schema[T]{msg: b, stencil: a}
+	return schema, err
+}
+
+func (s *Schema[T]) Clone(mem memory.Allocator) (schema *Schema[T], err error) {
+	defer func() {
+		e := recover()
+		if e != nil {
+			switch x := e.(type) {
+			case error:
+				err = x
+			case string:
+				err = errors.New(x)
+			default:
+				panic(x)
+			}
+		}
+	}()
+	a := s.stencil
+	b := build(a.ProtoReflect())
+	b.build(mem)
+	schema = &Schema[T]{msg: b, stencil: a}
+	return schema, err
 }
 
 // Append appends protobuf value to the schema builder.This method is not safe
