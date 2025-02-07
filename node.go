@@ -24,6 +24,7 @@ const (
 )
 
 var ErrMxDepth = errors.New("max depth reached, either the message is deeply nested or a circular dependency was introduced")
+var ErrPathNotFound = errors.New("path not found")
 
 type valueFn func(protoreflect.Value, bool) error
 
@@ -38,7 +39,26 @@ type node struct {
 	children []*node
 	encode   encodeFn // func(value protoreflect.Value, a arrow.Array, row int) protoreflect.Value
 	hash     map[string]*node
+	depth    int
 }
+
+// getPath returns a field found at a defined path, otherwise returns ErrPathNotFound.
+func (n *node) getPath(path []string) (*node, error) {
+	if len(path) == 0 { // degenerate input
+		return nil, fmt.Errorf("getPath needs at least one key")
+	}
+	if node, ok := n.hash[path[0]]; !ok {
+		return nil, ErrPathNotFound
+	} else if len(path) == 1 { // we've reached the final key
+		return node, nil
+	} else { // 1+ more keys
+		return node.getPath(path[1:])
+	}
+}
+
+// FullName != arrow.Field.Name
+// func (n *node) namePath() []string { return strings.Split(string(n.desc.FullName()), ".") }
+func (n *node) dotPath() string { return string(n.desc.FullName()) }
 
 func unmarshal[T proto.Message](n *node, r arrow.Record, rows []int) []T {
 	if rows == nil {
@@ -178,7 +198,7 @@ func createNode(parent *node, field protoreflect.FieldDescriptor, depth int) *no
 	} else {
 		name = string(field.Name())
 	}
-	n := &node{parent: parent, desc: field, field: arrow.Field{
+	n := &node{parent: parent, desc: field, depth: depth, field: arrow.Field{
 		Name:     string(field.Name()),
 		Nullable: nullable(field),
 		Metadata: arrow.MetadataFrom(map[string]string{
