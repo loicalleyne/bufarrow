@@ -43,9 +43,16 @@ type (
 )
 
 // WithNormalizer configures the scalars to add to a flat Arrow Record suitable for efficient aggregation.
-// Fields should be specified by their path (field name separated by .).
+// Fields should be specified by their path (field names separated by a period ie. 'field1.field2.field3').
+// The Arrow field types of the selected fields will be used to build the new schema. If coaslescing
+// data between multiple fields of the same type, specify only one of the paths.
 // List fields should have an index to retrieve specified, otherwise defaults to all elements;
 // ranges are not yet implemented.
+// Current functionality is limited to valitating the fields/aliases match in `New()“, and
+// `NormalizerBuilder()` returning an `*arrow.RecordBuilder` to be used externally to append data, and
+// NewNormalizerRecord() to get an `arrow.Record` from the normalizer RecordBuilder.
+// Future development may include Append methods that accept protopath operations to normalize protobuf
+// messages in-flight internally to the package.
 // failOnRangeError indicates whether to fail on a list[start:end] where end > len(list). TODO
 func WithNormalizer(fields, aliases []string, failOnRangeError bool) Option {
 	return func(cfg config) {
