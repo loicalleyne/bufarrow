@@ -12,18 +12,24 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/apache/arrow-go/v18/parquet"
 	"github.com/apache/arrow-go/v18/parquet/schema"
+	pb "github.com/jhump/protoreflect/v2/protobuilder"
 	"github.com/spf13/cast"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/descriptorpb"
+	dpb "google.golang.org/protobuf/types/dynamicpb"
 )
 
 type Schema[T proto.Message] struct {
-	msg         *message
-	stencil     T
-	normBuilder *array.RecordBuilder
-	opts        *Opt
+	msg           *message
+	stencil       T
+	stencilCustom proto.Message
+	normBuilder   *array.RecordBuilder
+	opts          *Opt
 }
 
 type Opt struct {
+	customFields           []CustomField
 	normalizerFieldStrings []string
 	normalizerAliasStrings []string
 	normalizerFields       []normField
@@ -41,6 +47,102 @@ type (
 	Option func(config)
 	config *Opt
 )
+
+// Cardinality determines whether a field is optional, required, or repeated.
+type Cardinality protoreflect.Cardinality
+
+// Constants as defined by the google.protobuf.Cardinality enumeration.
+const (
+	Optional Cardinality = 1 // appears zero or one times
+	Required Cardinality = 2 // appears exactly one time; invalid with Proto3
+	Repeated Cardinality = 3 // appears zero or more times
+)
+
+func (c *Cardinality) Get() protoreflect.Cardinality {
+	switch *c {
+	case Optional:
+		return protoreflect.Optional
+	case Required:
+		return protoreflect.Required
+	case Repeated:
+		return protoreflect.Repeated
+	}
+	return protoreflect.Optional
+}
+
+type FieldType fieldType
+type fieldType string
+
+const (
+	BOOL    FieldType = "bool"
+	BYTES   FieldType = "[]byte"
+	STRING  FieldType = "string"
+	INT64   FieldType = "int64"
+	FLOAT64 FieldType = "float64"
+)
+
+type CustomField struct {
+	Name             string
+	Type             FieldType
+	FieldCardinality Cardinality
+	IsPacked         bool
+}
+
+// WithCustomFields
+func WithCustomFields(c []CustomField) Option {
+	return func(cfg config) {
+		for _, f := range c {
+			cfg.customFields = append(cfg.customFields, f)
+		}
+	}
+}
+
+func (o *Opt) validateCustomFields() error {
+	var err error
+	for i, f := range o.customFields {
+		if f.Name == "" {
+			errors.Join(err, fmt.Errorf("custom field %d missing name", i))
+		}
+		if f.Type == "" {
+			errors.Join(err, fmt.Errorf("custom field %d missing type", i))
+		}
+		if f.FieldCardinality == 0 {
+			f.FieldCardinality = 1
+		}
+		if f.IsPacked == true && f.FieldCardinality != 3 {
+			errors.Join(err, fmt.Errorf("custom field %d cannot be packed unless cadinality=repeated", i))
+		}
+	}
+	return err
+}
+
+func (s *Schema[T]) addCustomFields() (proto.Message, error) {
+	var a T
+	msgBuilder, err := pb.FromMessage(a.ProtoReflect().Descriptor())
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range s.opts.customFields {
+		switch f.Type {
+		case BOOL:
+			msgBuilder.AddField(pb.NewField(protoreflect.Name(f.Name), pb.FieldTypeBool()).SetCardinality(f.FieldCardinality.Get()).SetOptions(&descriptorpb.FieldOptions{Packed: proto.Bool(f.IsPacked)}))
+		case BYTES:
+			msgBuilder.AddField(pb.NewField(protoreflect.Name(f.Name), pb.FieldTypeBytes()).SetCardinality(f.FieldCardinality.Get()).SetOptions(&descriptorpb.FieldOptions{Packed: proto.Bool(f.IsPacked)}))
+		case STRING:
+			msgBuilder.AddField(pb.NewField(protoreflect.Name(f.Name), pb.FieldTypeString()).SetCardinality(f.FieldCardinality.Get()).SetOptions(&descriptorpb.FieldOptions{Packed: proto.Bool(f.IsPacked)}))
+		case INT64:
+			msgBuilder.AddField(pb.NewField(protoreflect.Name(f.Name), pb.FieldTypeInt64()).SetCardinality(f.FieldCardinality.Get()).SetOptions(&descriptorpb.FieldOptions{Packed: proto.Bool(f.IsPacked)}))
+		case FLOAT64:
+			msgBuilder.AddField(pb.NewField(protoreflect.Name(f.Name), pb.FieldTypeFloat()).SetCardinality(f.FieldCardinality.Get()).SetOptions(&descriptorpb.FieldOptions{Packed: proto.Bool(f.IsPacked)}))
+		}
+	}
+	md, err := msgBuilder.Build()
+	if err != nil {
+		return nil, err
+	}
+	msg := dpb.NewMessage(md).ProtoReflect()
+	return msg.(proto.Message), err
+}
 
 // WithNormalizer configures the scalars to add to a flat Arrow Record suitable for efficient aggregation.
 // Fields should be specified by their path (field names separated by a period ie. 'field1.field2.field3').
@@ -144,13 +246,32 @@ func New[T proto.Message](mem memory.Allocator, opts ...Option) (schema *Schema[
 		}
 	}()
 	var a T
-	b := build(a.ProtoReflect())
-	b.build(mem)
+
 	o := new(Opt)
 	for _, f := range opts {
 		f(o)
 	}
-	schema = &Schema[T]{msg: b, stencil: a, opts: o}
+	schema = &Schema[T]{stencil: a, opts: o}
+	var b *message
+	if len(o.customFields) > 0 {
+		err := o.validateCustomFields()
+		if err != nil {
+			return nil, err
+		}
+		schema.stencilCustom, err = schema.addCustomFields()
+		if err != nil {
+			return nil, err
+		}
+		c := schema.stencilCustom
+		b = build(c.ProtoReflect())
+		b.build(mem)
+	} else {
+		b = build(a.ProtoReflect())
+		b.build(mem)
+	}
+
+	schema.msg = b
+
 	err = schema.validateNormalizerConfig()
 	if err != nil {
 		return nil, err
@@ -182,10 +303,18 @@ func (s *Schema[T]) Clone(mem memory.Allocator) (schema *Schema[T], err error) {
 			}
 		}
 	}()
-	a := s.stencil
-	b := build(a.ProtoReflect())
-	b.build(mem)
-	schema = &Schema[T]{msg: b, stencil: a, opts: s.opts}
+	switch len(s.opts.customFields) {
+	case 0:
+		a := s.stencil
+		b := build(a.ProtoReflect())
+		b.build(mem)
+		schema = &Schema[T]{msg: b, stencil: a, opts: s.opts}
+	default:
+		a := s.stencilCustom
+		b := build(a.ProtoReflect())
+		b.build(mem)
+		schema = &Schema[T]{msg: b, stencil: s.stencil, stencilCustom: a, opts: s.opts}
+	}
 	var normFields []arrow.Field
 	for i, f := range schema.opts.normalizerFields {
 		arrowField := f.node.field
@@ -203,6 +332,80 @@ func (s *Schema[T]) Clone(mem memory.Allocator) (schema *Schema[T], err error) {
 // for concurrent use.
 func (s *Schema[T]) Append(value T) {
 	s.msg.append(value.ProtoReflect())
+}
+
+// AppendWithCustom appends protobuf value and custom field values to the schema builder.
+// This method is not safe for concurrent use.
+func (s *Schema[T]) AppendWithCustom(value T, c ...any) error {
+	if len(s.opts.customFields) != len(c) {
+		return fmt.Errorf("custom fields values mismatch, got %d expected %d", len(c), len(s.opts.customFields))
+	}
+	m, err := s.mergeCustomFieldData(value, c)
+	if err != nil {
+		return err
+	}
+	s.msg.append(m.ProtoReflect())
+	return nil
+}
+
+func (s *Schema[T]) mergeCustomFieldData(value T, c []any) (proto.Message, error) {
+	v := proto.Clone(s.stencilCustom)
+	vb, err := proto.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	err = proto.Unmarshal(vb, v)
+	if err != nil {
+		return nil, err
+	}
+	for i, f := range c {
+		fd := v.ProtoReflect().Descriptor().Fields().ByTextName(s.opts.customFields[i].Name)
+		switch s.opts.customFields[i].Type {
+		case BOOL:
+			switch f.(type) {
+			case bool:
+				fv := protoreflect.ValueOfBool(f.(bool))
+				v.ProtoReflect().Set(fd, fv)
+			default:
+				return nil, fmt.Errorf("incorrect type %T on value %d, expected bool", f, i)
+			}
+		case BYTES:
+			switch f.(type) {
+			case []byte:
+				fv := protoreflect.ValueOfBytes(f.([]byte))
+				v.ProtoReflect().Set(fd, fv)
+			default:
+				return nil, fmt.Errorf("incorrect type %T on value %d, expected bool", f, i)
+			}
+		case STRING:
+			switch f.(type) {
+			case string:
+				fv := protoreflect.ValueOfString(f.(string))
+				v.ProtoReflect().Set(fd, fv)
+			default:
+				return nil, fmt.Errorf("incorrect type %T on value %d, expected string", f, i)
+			}
+		case INT64:
+			switch f.(type) {
+			case int64:
+				fv := protoreflect.ValueOfInt64(f.(int64))
+				v.ProtoReflect().Set(fd, fv)
+			default:
+				return nil, fmt.Errorf("incorrect type %T on value %d, expected int64", f, i)
+			}
+		case FLOAT64:
+			switch f.(type) {
+			case float64:
+				fv := protoreflect.ValueOfFloat64(f.(float64))
+				v.ProtoReflect().Set(fd, fv)
+			default:
+				return nil, fmt.Errorf("incorrect type %T on value %d, expected float64", f, i)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported type %T on value %d %v", f, i, f)
+		}
+	}
+	return v, nil
 }
 
 // NewRecord returns buffered builder value as an arrow.Record. The builder is

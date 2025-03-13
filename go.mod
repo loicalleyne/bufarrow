@@ -16,6 +16,7 @@ require (
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/flatbuffers v24.12.23+incompatible // indirect
+	github.com/jhump/protoreflect/v2 v2.0.0-beta.2 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
