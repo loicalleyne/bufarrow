@@ -82,13 +82,31 @@ const (
 )
 
 type CustomField struct {
-	Name             string
-	Type             FieldType
+	// Name must not conflict with existing proto.Message field names.
+	Name string
+	// Supported types:
+	// 		BOOL	bool
+	// 		BYTES	[]byte
+	//		STRING	string
+	//		INT64	int64
+	//		FLOAT64	float64
+	Type FieldType
+	// FieldCardinality is a type alias of protoreflect.Cardinality.
+	// Cardinality determines whether a field is optional, required, or repeated.
+	// const (
+	// 	Optional Cardinality = 1 // appears zero or one times
+	// 	Required Cardinality = 2 // appears exactly one time; invalid with Proto3
+	// 	Repeated Cardinality = 3 // appears zero or more times
+	// )
+	// Constants as defined by the google.protobuf.Cardinality enumeration.
 	FieldCardinality Cardinality
-	IsPacked         bool
+	// IsPacked reports whether repeated primitive numeric kinds should be
+	// serialized using a packed encoding.
+	// If true, then it implies Cardinality is Repeated.
+	IsPacked bool
 }
 
-// WithCustomFields
+// WithCustomFields adds user-defined fields to the message schema which can be populated with AppendWithCustom().
 func WithCustomFields(c []CustomField) Option {
 	return func(cfg config) {
 		for _, f := range c {
@@ -231,6 +249,10 @@ func (s *Schema[T]) validateNormalizerConfig() error {
 	return nil
 }
 
+// New returns a new bufarrow.Schema.
+// Options include WithNormalizer and WithCustomFields.
+// WithNormalizer creates a separate Arrow record whilst WithCustomFields expands the schema
+// of the proto.Message used as the type parameter.
 func New[T proto.Message](mem memory.Allocator, opts ...Option) (schema *Schema[T], err error) {
 	defer func() {
 		e := recover()
@@ -289,6 +311,8 @@ func New[T proto.Message](mem memory.Allocator, opts ...Option) (schema *Schema[
 	return schema, err
 }
 
+// Clone returns an identical bufarrow.Schema. Use in concurrency scenarios as Schema methods
+// are not concurrency safe.
 func (s *Schema[T]) Clone(mem memory.Allocator) (schema *Schema[T], err error) {
 	defer func() {
 		e := recover()
@@ -328,14 +352,22 @@ func (s *Schema[T]) Clone(mem memory.Allocator) (schema *Schema[T], err error) {
 	return schema, err
 }
 
-// Append appends protobuf value to the schema builder.This method is not safe
+// Append appends protobuf value to the schema builder. This method is not safe
 // for concurrent use.
 func (s *Schema[T]) Append(value T) {
 	s.msg.append(value.ProtoReflect())
 }
 
 // AppendWithCustom appends protobuf value and custom field values to the schema builder.
-// This method is not safe for concurrent use.
+// This method is not safe for concurrent use. The number of custom field values must match
+// the number of custom fields.
+// Supported types:
+//
+//	bool
+//	[]byte
+//	string
+//	int64
+//	float64
 func (s *Schema[T]) AppendWithCustom(value T, c ...any) error {
 	if len(s.opts.customFields) != len(c) {
 		return fmt.Errorf("custom fields values mismatch, got %d expected %d", len(c), len(s.opts.customFields))
@@ -349,15 +381,19 @@ func (s *Schema[T]) AppendWithCustom(value T, c ...any) error {
 }
 
 func (s *Schema[T]) mergeCustomFieldData(value T, c []any) (proto.Message, error) {
+	// Clone proto.Message containing custom fields
 	v := proto.Clone(s.stencilCustom)
+	// Marshal stock message to bytes
 	vb, err := proto.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
+	// Unmarshal stock message into empty proto.Message containing custom fields
 	err = proto.Unmarshal(vb, v)
 	if err != nil {
 		return nil, err
 	}
+	// Populate custom fields
 	for i, f := range c {
 		fd := v.ProtoReflect().Descriptor().Fields().ByTextName(s.opts.customFields[i].Name)
 		switch s.opts.customFields[i].Type {
@@ -414,6 +450,8 @@ func (s *Schema[T]) NewRecord() arrow.Record {
 	return s.msg.NewRecord()
 }
 
+// NormalizerBuilder returns the Normalizer's Arrow array.RecordBuilder, to be used to append
+// normalized data.
 func (s *Schema[T]) NormalizerBuilder() *array.RecordBuilder {
 	return s.normBuilder
 }

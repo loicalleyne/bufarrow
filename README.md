@@ -6,7 +6,9 @@ Go library to build Apache Arrow records from Protocol Buffers
 
 ## Features 
 - generate Arrow and Parquet schemas from Protobuf structs
+- augment Protobuf data with custom fields
 - build Arrow records from Protobuf
+- build Arrow records with normalized flattened Protobuf
 
 ## 🚀 Install
 
