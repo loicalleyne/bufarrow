@@ -83,14 +83,14 @@ const (
 
 type CustomField struct {
 	// Name must not conflict with existing proto.Message field names.
-	Name string
+	Name string `toml:"name"`
 	// Supported types:
 	// 		BOOL	bool
 	// 		BYTES	[]byte
 	//		STRING	string
 	//		INT64	int64
 	//		FLOAT64	float64
-	Type FieldType
+	Type FieldType `toml:"type"`
 	// FieldCardinality is a type alias of protoreflect.Cardinality.
 	// Cardinality determines whether a field is optional, required, or repeated.
 	// const (
@@ -99,11 +99,11 @@ type CustomField struct {
 	// 	Repeated Cardinality = 3 // appears zero or more times
 	// )
 	// Constants as defined by the google.protobuf.Cardinality enumeration.
-	FieldCardinality Cardinality
+	FieldCardinality Cardinality `toml:"field_cardinality"`
 	// IsPacked reports whether repeated primitive numeric kinds should be
 	// serialized using a packed encoding.
 	// If true, then it implies Cardinality is Repeated.
-	IsPacked bool
+	IsPacked bool `toml:"is_packed"`
 }
 
 // WithCustomFields adds user-defined fields to the message schema which can be populated with AppendWithCustom().
