@@ -128,7 +128,7 @@ func (o *Opt) validateCustomFields() error {
 			f.FieldCardinality = 1
 		}
 		if f.IsPacked == true && f.FieldCardinality != 3 {
-			errors.Join(err, fmt.Errorf("custom field %d cannot be packed unless cadinality=repeated", i))
+			errors.Join(err, fmt.Errorf("custom field %d cannot be packed unless cardinality=repeated", i))
 		}
 	}
 	return err
